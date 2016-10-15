@@ -16,6 +16,7 @@
 using namespace std;
 
 
+
 #include "GraphicApplication.h"
 
 #endif // _STDAFX_H_INCLUDED

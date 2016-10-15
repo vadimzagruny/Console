@@ -12,10 +12,10 @@ CTriangle::CTriangle(int Size)
 {
 	mA.x = 0;
 	mA.y = 0;
-	mB.x = Size;
-	mB.y = Size;
+	mB.x = Size-1;
+	mB.y = Size-1;
 	mC.x = 0;
-	mC.y = Size;
+	mC.y = Size-1;
 
 	mSize = Size;
 
@@ -33,20 +33,20 @@ void CTriangle::Create(InterpolationType IType)
 
 	 mInterpType = IType;
 
-	for(int OY = 0;OY<=mSize;OY++){
-		for(int OX = 0; OX < OY; OX++){
-				Vert.x = OX; 
-				Vert.y = OY;
-				switch(IType){
+	for(int OY = 0;OY<=mSize-1;OY++){
+		for(int OX = 0; OX < (OY+1); OX++){
+			Vert.x = OX; 
+			Vert.y = OY;
+			switch(IType){
 				case InterpolationType::BARYCENTRIC:
 					BarycentricCoordInterpolate(Vert);
 				break;
 				case InterpolationType::LINEAR:
 					LinearInterpolate(Vert);
 				break;
-				};
-				PointList.push_back(Vert);
-			}
+			};
+			PointList.push_back(Vert);
+		}
 	}
 }
 
@@ -57,45 +57,123 @@ void CTriangle::SetColorABC(int colorA,int colorB,int colorC)
 	mC.color = colorC;
 }
 
+ 
 void CTriangle::LinearInterpolate(_Vertex &Vertex)
 {
-	int  CurentLength = (int)sqrt(Vertex.x*Vertex.x + Vertex.y*Vertex.y);
-	int  PointALength = (int)sqrt(mA.x*mA.x + mA.y*mA.y);
-	int  PointBLength = (int)sqrt(mB.x*mB.x + mB.y*mB.y);
-	int  PointCLength = (int)sqrt(mC.x*mC.x + mC.y*mC.y);
+	// Линейная интерполяция для треугольника
 
-	////f(X1)+( f(X2) - f(X1) )*(X - X1)/(X2 - X1)
-	int c1  = mA.color + ( mB.color - mA.color )*(CurentLength - PointALength)/(PointBLength - PointALength);//AB
-	int c2  = mC.color + ( mA.color - mC.color )*(CurentLength - PointCLength)/(PointALength - PointCLength);//CA
-	Vertex.color = (c1+c2)/2;
+	_Vertex CurrentPoint = Vertex;
+	_Vertex tA,tB,tC;
+
+	// Если текущая точка совпадает с одной из вершин треугольника то присвоить ей цвет вершины
+	if(Vertex==mA){
+		Vertex.color = mA.color;
+		return;
+	}
+	if(Vertex==mB){
+		Vertex.color = mB.color;
+		return;
+	}
+	if(Vertex==mC){
+		Vertex.color = mC.color;
+		return;
+	}
+
+	// Переходим к математике с фиксированой точкой
+	CurrentPoint.x = TOFIXEDPOINT(CurrentPoint.x);
+	CurrentPoint.y = TOFIXEDPOINT(CurrentPoint.y);
+
+	tA.x = TOFIXEDPOINT(mA.x); tA.color =  mA.color;
+	tA.y = TOFIXEDPOINT(mA.y); tB.color =  mB.color;
+	tB.x = TOFIXEDPOINT(mB.x); tC.color =  mC.color;
+	tB.y = TOFIXEDPOINT(mB.y); tA.color = TOFIXEDPOINT( tA.color);
+	tC.x = TOFIXEDPOINT(mC.x); tB.color = TOFIXEDPOINT( tB.color);
+	tC.y = TOFIXEDPOINT(mC.y); tC.color = TOFIXEDPOINT( tC.color);
+
+	int MatrixInv[3][3];
+	int MatrixRes[3][3];
+
+	int Matrix3x3[3][3] = {{tA.x,tB.x,tC.x},{tA.y,tB.y,tC.y},{FIXPOINTKOEFF,FIXPOINTKOEFF,FIXPOINTKOEFF}};
+	int Matrix1x3[1][3] = {tA.color,tB.color,tC.color};
+	int Matrix3x1[3][3] = {{CurrentPoint.x,0,0},{CurrentPoint.y,0,0},{FIXPOINTKOEFF,0,0}};
 	
-	// Функция хорошо работает с целочисленными типами но не подходит для треугольника и потому работает не корректно 
+	//Вычисляем определитель матрицы
+	int determinant = CFixedPointMAth::det(Matrix3x3);
+	
+	if(determinant){ // если не равен нулю то обратная матрица существует
+		CFixedPointMAth::inverse(Matrix3x3,determinant,MatrixInv);
+	}
+	else{
+		return;
+	}
+	
+	//по формуле линейной интерполяции для матриц
+	CFixedPointMAth::MulMatrix(MatrixRes,Matrix1x3,1,3,MatrixInv,3,3);
+	CFixedPointMAth::MulMatrix(Matrix3x3,MatrixRes,1,3,Matrix3x1,3,1);
 
+	Vertex.color = Matrix3x3[0][0]>>SHIFTKOEFF; // Возвращаем результат к исходному виду 
+	
 }
+
 
 void CTriangle::BarycentricCoordInterpolate(_Vertex &Vertex)
 {
-
 	//интерполяция атрибутов вершин на основе барицентрических координат
+	
+	// Если текущая точка совпадает с одной из вершин треугольника то присвоить ей цвет вершины
+	if(Vertex==mA){
+		Vertex.color = mA.color;
+		return;
+	}
+	if(Vertex==mB){
+		Vertex.color = mB.color;
+		return;
+	}
+	if(Vertex==mC){
+		Vertex.color = mC.color;
+		return;
+	}
 
-	int l1 = (((mB.y - mC.y) * (Vertex.x	- mC.x) + (mC.x - mB.x) * (Vertex.y	- mC.y))*2) / // Числитель умножен на 2 чтобы избежать нулевого значения
-             ((mB.y  - mC.y)  * (mA.x		- mC.x) + (mC.x - mB.x) * (mA.y		- mC.y));	  // 
-    int l2 = (((mC.y - mA.y) * (Vertex.x	- mC.x) + (mA.x - mC.x) * (Vertex.y	- mC.y))*2) / // Числитель умножен на 2 чтобы избежать нулевого значения
-             ((mB.y  - mC.y)  * (mA.x		- mC.x) + (mC.x - mB.x) * (mA.y		- mC.y));
-    int l3 = 1 - l1 - l2;
+	int Numerator,Denominator;
 
-	if(l1 >= 0 && l1 <= 1 && l2 >= 0 && l2 <= 1 && l3 >= 0 && l3 <= 1){
-		Vertex.color = l1 *mA.color + l2*mB.color  + l3*mC.color ;
+	_Vertex CurrentPoint = Vertex;
+	_Vertex tA,tB,tC;
+
+	// Переходим к математике с фиксированой точкой
+	CurrentPoint.x = TOFIXEDPOINT(CurrentPoint.x);
+	CurrentPoint.y = TOFIXEDPOINT(CurrentPoint.y);
+
+	tA.x = TOFIXEDPOINT(mA.x); 		 tA.color =  mA.color;
+	tA.y = TOFIXEDPOINT(mA.y);		 tB.color =  mB.color;
+	tB.x = TOFIXEDPOINT(mB.x);		 tC.color =  mC.color;
+	tB.y = TOFIXEDPOINT(mB.y);		 tA.color = TOFIXEDPOINT( tA.color);
+	tC.x = TOFIXEDPOINT(mC.x);		 tB.color = TOFIXEDPOINT( tB.color);
+	tC.y = TOFIXEDPOINT(mC.y);		 tC.color = TOFIXEDPOINT( tC.color);
+
+	Numerator	= CFixedPointMAth::MUL((tB.y - tC.y) ,(CurrentPoint.x	- tC.x)) + CFixedPointMAth::MUL((tC.x - tB.x), (CurrentPoint.y	- tC.y));
+	Denominator = CFixedPointMAth::MUL((tB.y - tC.y) ,(tA.x				- tC.x)) + CFixedPointMAth::MUL((tC.x - tB.x), (tA.y			- tC.y));
+
+	int l1 = CFixedPointMAth::DIV(Numerator,Denominator); 
+    
+	Numerator	= CFixedPointMAth::MUL((tC.y - tA.y) , (CurrentPoint.x - tC.x)) + CFixedPointMAth::MUL((tA.x - tC.x), (CurrentPoint.y	- tC.y));
+	Denominator = CFixedPointMAth::MUL((tB.y - tC.y) , (tA.x		   - tC.x)) + CFixedPointMAth::MUL((tC.x - tB.x), (tA.y				- tC.y));
+	 
+    int l2 =  CFixedPointMAth::DIV(Numerator,Denominator); 
+             
+    int l3 = FIXPOINTKOEFF - (l1) - (l2);
+
+	//Интерполяция
+	if(l1 >= 0 && l1 <= FIXPOINTKOEFF && l2 >= 0 && l2 <= FIXPOINTKOEFF && l3 >= 0 && l3 <= FIXPOINTKOEFF){
+		Vertex.color = (CFixedPointMAth::MUL(l1 , tA.color) + CFixedPointMAth::MUL(l2,tB.color) + CFixedPointMAth::MUL(l3,tC.color))>>SHIFTKOEFF;///FIXPOINTKOEFF ;
     }
 	
-	//Функция работает точнее с типами с плавающей запятой
 	
 }
 
 void CTriangle::Draw()
 {
 
-	int Y = 1;
+	int Y = 0;
 
 	for(UINT i = 0;i<PointList.size();i++){
 		if(PointList[i].x != -1){

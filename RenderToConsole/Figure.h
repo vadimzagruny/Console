@@ -11,6 +11,12 @@ protected:
 		}
 		int x,y;
 		int color;
+		bool operator == (_Vertex v1)
+		{
+			if(v1.x == x && v1.y == y)
+				return true;
+			else return false;
+		}
 	};
 
 	vector<_Vertex>PointList;

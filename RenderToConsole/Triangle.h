@@ -1,5 +1,6 @@
 #pragma once
 #include "figure.h"
+#include "FixedPointMAth.h"
 using namespace std;
 class CTriangle : public CFigure
 {
